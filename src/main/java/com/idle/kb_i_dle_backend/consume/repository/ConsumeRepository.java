@@ -11,6 +11,7 @@ import java.util.List;
 public interface ConsumeRepository extends JpaRepository<OutcomeAverage, Integer> {
 
     List<OutcomeAverage> findAll();
+    List<OutcomeAverage> findByAgeGroupAndCategoryAndQuater(String category, String quater);
 
 }
 

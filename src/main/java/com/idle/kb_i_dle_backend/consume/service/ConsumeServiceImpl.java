@@ -5,6 +5,7 @@ import com.idle.kb_i_dle_backend.consume.entity.OutcomeAverage;
 import com.idle.kb_i_dle_backend.consume.entity.OutcomeUser;
 import com.idle.kb_i_dle_backend.consume.repository.ConsumeRepository;
 import com.idle.kb_i_dle_backend.consume.repository.OutcomeUserRepository;
+import com.idle.kb_i_dle_backend.member.entity.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -96,5 +97,25 @@ public class ConsumeServiceImpl implements ConsumeService {
         MonthConsumeDTO monthConsumeDTO = new MonthConsumeDTO(month,year,dailyAmount);
 
         return monthConsumeDTO;
+    }
+
+        @Override
+        public List<AvgCategorySumDTO> findCompareWithAvg(Integer uid, String category, Integer year, Integer month) {
+        //user_info repository에서 uid를 주고, 나이를 알아와야
+        int birthYear = outcomeUserRepository.findBirthYearByUid(uid);
+        int age = year - birthYear;
+        //year랑 month로  => STring 값인 "2024년 1분기"
+        String quater = getQuaterString(year, month);
+
+        //해당 카테고리의 평균 소비
+        //=> avgCategorySumDTO에 넣어
+            List<OutcomeAverage> avgList = consumeRepository.findByAgeGroupAndCategoryAndQuater(category, quater);
+            List<AvgCategorySumDTO> avgCategorySumDTOs = avgList.stream()
+                    .map(avg -> new AvgCategorySumDTO(avg.getCategory(), avg.getOutcome()))
+                    .collect(Collectors.toList());
+
+            //유저의 해당 년도 해당 달의 해당카테고리의 소비
+        //repo에서 가져와서
+        //=> avgcategorysumDTO에 넣어야
     }
 }
