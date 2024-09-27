@@ -8,9 +8,20 @@ import com.idle.kb_i_dle_backend.member.dto.MemberJoinDTO;
 import com.idle.kb_i_dle_backend.member.dto.UserInfoDTO;
 import com.idle.kb_i_dle_backend.member.service.MemberService;
 import com.idle.kb_i_dle_backend.member.util.JwtProcessor;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.math.BigInteger;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.security.SecureRandom;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
+import javax.servlet.http.HttpSession;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.PropertySource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -22,18 +33,28 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+import org.json.JSONObject;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestTemplate;
 
 @Slf4j
 @RestController
 @RequestMapping("/member")
+@PropertySource({"classpath:/application.properties"})
 public class MemberController {
 
     private final AuthenticationManager authenticationManager;
     private final JwtProcessor jwtProcessor;
     private final MemberService memberService;
 
-    public MemberController(AuthenticationManager authenticationManager, JwtProcessor jwtProcessor, MemberService memberService) {
+    public MemberController(AuthenticationManager authenticationManager, JwtProcessor jwtProcessor,
+                            MemberService memberService) {
         this.authenticationManager = authenticationManager;
         this.jwtProcessor = jwtProcessor;
         this.memberService = memberService;
@@ -63,6 +84,117 @@ public class MemberController {
         return new UserInfoDTO(member.getUid(), member.getId(), member.getNickname(), member.getAuth().toString());
     }
 
+    @Value("${naver.client.id}")
+    private String clientId;
+
+    @Value("${naver.client.secret}")
+    private String clientSecret;
+
+    @Value("${naver.redirect.uri}")
+    private String redirectUri;
+
+    @GetMapping("/naverlogin")
+    public ResponseEntity<?> naverlogin(HttpSession session) throws Exception {
+        // 상태 토큰으로 사용할 랜덤 문자열 생성
+        String state = generateState();
+        // 세션 또는 별도의 저장 공간에 상태 토큰을 저장
+        session.setAttribute("naverState", state);
+        log.error("naverState: " + state);
+
+        String naverAuthUrl = "https://nid.naver.com/oauth2.0/authorize?response_type=code"
+                + "&client_id=" + clientId
+                + "&redirect_uri=" + URLEncoder.encode(redirectUri, "UTF-8")
+                + "&state=" + state;
+
+        return ResponseEntity.ok(Map.of("redirectUrl", naverAuthUrl, "state", state));
+    }
+
+    public String generateState() {
+        SecureRandom random = new SecureRandom();
+        return new BigInteger(130, random).toString(32);
+    }
+
+    @GetMapping("/naverCallback")
+    public ResponseEntity<?> naverCallback(@RequestParam String code, @RequestParam String state,
+                                           HttpSession session, RedirectAttributes redirectAttributes)
+            throws Exception {
+
+        Enumeration<String> attributeNames = session.getAttributeNames();
+        while (attributeNames.hasMoreElements()) {
+            String name = attributeNames.nextElement();
+            Object value = session.getAttribute(name);
+            log.error("Session attribute - Name: " + name + ", Value: " + value);
+        }
+        String sessionState = (String) session.getAttribute("naverState");
+
+        if (!state.equals(sessionState)) {
+            redirectAttributes.addFlashAttribute("error", "Invalid State");
+            log.error("Invalid State. Session state: {}, Received state: {}", sessionState, state);
+            return ResponseEntity.badRequest().body("Invalid State");
+        }
+
+        // 최종 인증 값인 접근 토큰을 발급
+        String tokenUrl = "https://nid.naver.com/oauth2.0/token?grant_type=authorization_code"
+                + "&client_id=" + clientId
+                + "&client_secret=" + clientSecret
+                + "&code=" + code
+                + "&state=" + state;
+        String authtoken = getHttpResponse(tokenUrl);
+        log.info("Token Response: {}", authtoken);
+
+        // JSON 파싱
+        JSONObject tokenJson = new JSONObject(authtoken);
+        String accessToken = tokenJson.getString("access_token");
+
+        // 사용자 프로필 정보 조회
+        JSONObject userProfile = getUserProfile(accessToken);
+        log.info("User Profile: {}", userProfile.toString());
+
+        // 여기서 userProfile을 사용하여 회원가입 또는 로그인 처리
+        // 예: MemberDTO 생성 및 저장, JWT 토큰 생성 등
+
+        return ResponseEntity.ok(userProfile.toString());
+    }
+
+    private String getHttpResponse(String urlString) throws Exception {
+        URL url = new URL(urlString);
+        HttpURLConnection con = (HttpURLConnection) url.openConnection();
+        con.setRequestMethod("GET");
+
+        BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+        String inputLine;
+        StringBuffer response = new StringBuffer();
+        while ((inputLine = in.readLine()) != null) {
+            response.append(inputLine);
+        }
+        in.close();
+
+        return response.toString();
+    }
+    private JSONObject getUserProfile(String accessToken) throws Exception{
+        String profileUrl = "https://openapi.naver.com/v1/nid/me";
+        URL url = new URL(profileUrl);
+        HttpURLConnection con = (HttpURLConnection) url.openConnection();
+        con.setRequestMethod("GET");
+        con.setRequestProperty("Authorization", "Bearer " + accessToken);
+
+        int responseCode = con.getResponseCode();
+        BufferedReader br;
+        if (responseCode == 200) {
+            br = new BufferedReader(new InputStreamReader(con.getInputStream()));
+        } else {
+            br = new BufferedReader(new InputStreamReader(con.getErrorStream()));
+        }
+        String inputLine;
+        StringBuilder response = new StringBuilder();
+        while ((inputLine = br.readLine()) != null) {
+            response.append(inputLine);
+        }
+        br.close();
+
+        return new JSONObject(response.toString());
+    }
+
     @PostMapping("/register")
     public ResponseEntity<?> signup(@RequestBody MemberJoinDTO signupDTO) {
         try {
@@ -72,9 +204,11 @@ public class MemberController {
             return ResponseEntity.badRequest().body(e.getMessage());
         } catch (Exception e) {
             e.printStackTrace();  // Log the error for debugging
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("An error occurred while processing the request.");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("An error occurred while processing the request.");
         }
     }
+
     @GetMapping("/checkDupl/{id}")
     public ResponseEntity<Map<String, Boolean>> checkDuplicateUsername(@PathVariable String id) {
         boolean exists = memberService.checkDupl(id);
@@ -97,6 +231,7 @@ public class MemberController {
         response.put("success", success);
         return ResponseEntity.ok(response);
     }
+
     @PostMapping("/findid")
     public ResponseEntity<?> findId(@RequestBody Map<String, String> payload) {
         String email = payload.get("email");

@@ -51,7 +51,8 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addMapping("/**")
                 .allowedMethods("*")
                 .allowedOriginPatterns("*")
-                .allowedOrigins("http://localhost:5173"); // 프론트엔드 도메인
+                .allowedOrigins("http://localhost:5173")
+                .allowCredentials(true); // 프론트엔드 도메인
     }
 
     @Bean

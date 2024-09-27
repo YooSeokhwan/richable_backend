@@ -1,16 +1,14 @@
 package com.idle.kb_i_dle_backend.member.entity;
 
 import com.idle.kb_i_dle_backend.finance.entity.Spot;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import javax.persistence.*;
 import java.util.List;
 
 @Entity
 @Getter
+@Setter
 @Table(name = "user_info", catalog = "user_info")
 @Builder
 @AllArgsConstructor
@@ -24,7 +22,7 @@ public class User {
     private String password;
     private String email;
     private String social;
-    private String birth_year;
+    private Integer birth_year;
     private String gender;
     private String profile;
 
